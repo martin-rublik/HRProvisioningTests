@@ -1,0 +1,41 @@
+try
+{
+	$context=Get-MgContext
+
+	if(-not $context)
+	{
+		Write-Warning "You are not connected to MGGraph. Please run: 'Connect-MGGraph -Scopes Synchronization.ReadWrite.All'"
+		return
+	}else
+	{
+		if (-not ('Synchronization.ReadWrite.All' -in $context.Scopes))
+		{
+			Write-Warning "Missing Synchronization.Read.All context. Please run: 'Connect-MGGraph -Scopes Synchronization.ReadWrite.All'"
+			return    
+		}
+	}
+	
+	$config = Get-Content -Raw "$PSScriptRoot\Config\Config.json" | ConvertFrom-Json
+	
+	$pesterConfig = New-PesterConfiguration @{
+		Run = @{
+			Container = New-PesterContainer -Path 'Tests' 
+		}
+		Output = @{
+			Verbosity = 'Detailed'
+			StackTraceVerbosity = 'None'
+		}
+		TestResult = @{
+			OutputFormat = "NUnitXml"
+			TestSuiteName = "$($config.HRApplicationDisplayName) Tests"
+			Enabled = $true
+			OutputPath = "$((get-date).tostring("yyyy-MM-yy_hh-mm-ss"))-TestResults.xml"
+		}
+	}
+
+	Invoke-Pester -Configuration $pesterConfig 
+}catch
+{
+	throw $_
+}
+

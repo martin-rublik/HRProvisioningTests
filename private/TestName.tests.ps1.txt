@@ -1,0 +1,39 @@
+﻿Describe '%TESTNAME%' {
+    # load the json config files
+    $testConfig=@()
+    ls "$PSScriptRoot\Data\*.json" | foreach {
+        $configObject = Get-Content -Raw $_.FullName | ConvertFrom-Json
+        
+        $ht=@{}
+        
+        $configObject.psobject.properties | foreach {$ht.Add($_.Name,$_.Value)}
+        $tenantConfig=ls "$PSScriptRoot\..\..\Config\Config.json" | get-content -raw | ConvertFrom-Json
+        $ht.Add("SynchronizationTemplateId",$tenantConfig.SynchronizationTemplateId)
+        $ht.Add("ServicePrincipalId",$tenantConfig.ServicePrincipalId)
+
+        $testConfig+=$ht
+    }
+    
+    # for each test structure: test Parsing, Evaluation and Expected result
+    It "When: '<Description>', it returns: '<ExpectedResult>'" -ForEach $testConfig {
+
+        $propertiesHT = @()
+ 		foreach($attr in $InputAttributes.psobject.properties)
+        {
+            $propertiesHT+=@{'key'=$attr.Name; 'value'=$attr.Value}
+        }
+        $params=@{
+	        expression = $Expression
+	        targetAttributeDefinition = $null
+	        testInputObject = @{
+		        definition = $null
+		        properties = $propertiesHT
+	        }
+        }
+
+        $retval = Invoke-MgParseServicePrincipalSynchronizationTemplateSchemaExpression -ServicePrincipalId $ServicePrincipalId -BodyParameter $params -SynchronizationTemplateId $SynchronizationTemplateId
+        $retval.ParsingSucceeded | Should -Be $true -Because "PARSING must succeed to determine EvaluationResult."
+        $retval.EvaluationSucceeded | Should -Be $true -Because "EVALUATION must succeed to determine EvaluationResult."
+        $retval.EvaluationResult | Should -Be $ExpectedResult 
+    }
+}
