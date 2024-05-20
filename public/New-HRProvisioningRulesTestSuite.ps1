@@ -36,20 +36,29 @@ Function New-HRProvisioningRulesTestSuite
         mkdir -Force -Path $TestSuiteDirectory\Tests | Out-Null
         
         # Searching for servicePrincipalId
+        Write-Verbose "Searching for HR Provisioning application service principal: $HRApplicationDisplayName"
         $servicePrincipalId =  Get-MgServicePrincipal -Filter "displayName eq '$HRApplicationDisplayName'" | select -ExpandProperty Id
+        if ((-not $servicePrincipalId) -or ($servicePrincipalId.count -gt 1))
+        {
+            throw "HR Provisioning application service principal mismatch."
+        }
         # Searching for synchronization job
+        Write-Verbose "Getting synchronization job"
         $synchronizationJob = Get-MgServicePrincipalSynchronizationJob -ServicePrincipalId $servicePrincipalId 
         # get the schema
+        Write-Verbose "Getting synchronization job schema"
         $syncrhonizationJobSchema = Get-MgServicePrincipalSynchronizationJobSchema -ServicePrincipalId $servicePrincipalId -SynchronizationJobId  $synchronizationJob.Id
         # get the template
+        Write-Verbose "Getting synchronization template"
         $syncTemplates = Get-MgServicePrincipalSynchronizationTemplate -ServicePrincipalId $servicePrincipalId
         
         # write config
+        Write-Verbose "Saving config to: $TestSuiteDirectory\Config\config.json"
         @{
             'ServicePrincipalId' = $servicePrincipalId
             'SynchronizationTemplateId' = $syncTemplates.Id
             'HRApplicationDisplayName' = $HRApplicationDisplayName
-        } | ConvertTo-Json | Out-File $TestSuiteDirectory\Config\config.json -Encoding utf8
+        } | ConvertTo-Json | Out-File "$TestSuiteDirectory\Config\config.json" -Encoding utf8
         
         $testTemplate = get-content "$($PSScriptRoot)\..\private\TestName.tests.ps1.txt"
         
@@ -62,6 +71,7 @@ Function New-HRProvisioningRulesTestSuite
             if ($rule.Source.Type -eq 'Function')
             {
                 $targetAttributeName=$rule.TargetAttributeName.ToString()
+                Write-Verbose "Generating tests and generic test cases for: $targetAttributeName"
         
                 $attributes=$regex.Matches($rule.Source.Expression) | select -ExpandProperty Value | %{$_.Trim('[').Trim(']')} | sort -Unique
                 $attributesHT=new-object pscustomobject
@@ -88,6 +98,10 @@ Function New-HRProvisioningRulesTestSuite
                 cp "$($PSScriptRoot)\..\private\Invoke-HRTests.ps1.txt" "$TestSuiteDirectory\Invoke-HRTests.ps1"
             }
         }
+        Write-Host "Test cases generated in $TestSuiteDirectory"
+        Write-Host " Modify expected results and parameters in respective Data subdirectories located in $TestSuiteDirectory\Data"
+        Write-Host "When ready, run:"    
+        Write-Host " $TestSuiteDirectory\Invoke-HRTests.ps1"    
     }
     catch {
         throw $_

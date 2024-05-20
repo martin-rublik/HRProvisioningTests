@@ -17,9 +17,11 @@ try
 	
 	$config = Get-Content -Raw "$PSScriptRoot\Config\Config.json" | ConvertFrom-Json
 	
+	$outFile="$PSScriptRoot\$((get-date).tostring("yyyy-MM-yy_hh-mm-ss"))-TestResults.xml"
+
 	$pesterConfig = New-PesterConfiguration @{
 		Run = @{
-			Container = New-PesterContainer -Path 'Tests' 
+			Container = New-PesterContainer -Path "$PSScriptRoot\Tests" 
 		}
 		Output = @{
 			Verbosity = 'Detailed'
@@ -29,11 +31,12 @@ try
 			OutputFormat = "NUnitXml"
 			TestSuiteName = "$($config.HRApplicationDisplayName) Tests"
 			Enabled = $true
-			OutputPath = "$((get-date).tostring("yyyy-MM-yy_hh-mm-ss"))-TestResults.xml"
+			OutputPath = "$outFile"
 		}
 	}
 
 	Invoke-Pester -Configuration $pesterConfig 
+	Write-Host "Pester report saved to: $outFile"
 }catch
 {
 	throw $_
