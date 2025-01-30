@@ -1,14 +1,23 @@
 Function New-HRProvisioningRulesTestSuite
 {
     param(
-        # Brief description of what this test is checking.
-        # Markdown is supported.
-        [Parameter(Mandatory = $true)]
+        [Parameter(Mandatory = $false)]
         [string] $TestSuiteDirectory,
         [Parameter(Mandatory = $true)]
-        [string] $HRApplicationDisplayName
+        [string] $HRApplicationDisplayName,
+		[Parameter(Mandatory = $false)]
+		[string] $TestSuiteName = "Provisioning",
+		[Parameter(Mandatory = $false)]
+    	[switch]$Force	
     )        
     try {
+		
+		if (-not $TestSuiteDirectory)
+		{
+			$TestSuiteDirectory = pwd | select -ExpandProperty Path
+		}			
+		
+        $TestSuiteDirectory = Join-Path -Path $TestSuiteDirectory -ChildPath $TestSuiteName
 
         $context=Get-MgContext
 
@@ -27,8 +36,14 @@ Function New-HRProvisioningRulesTestSuite
 
         if ([System.IO.Directory]::Exists($TestSuiteDirectory) -and (Test-Path -Path "$TestSuiteDirectory\*"))
         {
-            Write-Warning "The destination directory already exists and is not empty."
-            return
+            if ($Force.IsPresent)
+            {
+                rm -Recurse -Force "$TestSuiteDirectory\*"
+            }else
+            {
+                Write-Warning "The destination directory already exists and is not empty; Running this cmd-let with -Force switch will delete and re-create the test set."
+                return
+            }
         }
         
         mkdir -Force -Path $TestSuiteDirectory | Out-Null
@@ -58,6 +73,7 @@ Function New-HRProvisioningRulesTestSuite
             'ServicePrincipalId' = $servicePrincipalId
             'SynchronizationTemplateId' = $syncTemplates.Id
             'HRApplicationDisplayName' = $HRApplicationDisplayName
+            'TestSuiteName' = $TestSuiteName
         } | ConvertTo-Json | Out-File "$TestSuiteDirectory\Config\config.json" -Encoding utf8
         
         $testTemplate = get-content "$($PSScriptRoot)\..\private\TestName.tests.ps1.txt"
@@ -89,11 +105,10 @@ Function New-HRProvisioningRulesTestSuite
                 }
                 mkdir -force $TestSuiteDirectory\Tests\$targetAttributeName\Data | Out-Null
         
-                $rules | ConvertTo-Json | Out-File -Encoding utf8 $TestSuiteDirectory\Tests\$targetAttributeName\Data\case1.json
-                $rules | ConvertTo-Json | Out-File -Encoding utf8 $TestSuiteDirectory\Tests\$targetAttributeName\Data\case2.json
-                #$rules | ConvertTo-Json | Out-File -Encoding utf8 $TestSuiteDirectory\Tests\$targetAttributeName\Data\case2.json
+                $rules | ConvertTo-Json | Out-File -Encoding utf8 $TestSuiteDirectory\Tests\$targetAttributeName\Data\001.json
+                $rules | ConvertTo-Json | Out-File -Encoding utf8 $TestSuiteDirectory\Tests\$targetAttributeName\Data\002.json
                 
-                $testTemplate.Replace('%TESTNAME%',$targetAttributeName) | Out-File -Encoding utf8 "$TestSuiteDirectory\Tests\$targetAttributeName\$targetAttributeName.tests.ps1"
+                $testTemplate.Replace('%TESTNAME%',$targetAttributeName).Replace('%TESTSUITENAME%',$TestSuiteName) | Out-File -Encoding utf8 "$TestSuiteDirectory\Tests\$targetAttributeName\$targetAttributeName.tests.ps1"
         
                 cp "$($PSScriptRoot)\..\private\Invoke-HRTests.ps1.txt" "$TestSuiteDirectory\Invoke-HRTests.ps1"
             }
@@ -102,6 +117,9 @@ Function New-HRProvisioningRulesTestSuite
         Write-Host " Modify expected results and parameters in respective Data subdirectories located in $TestSuiteDirectory\Data"
         Write-Host "When ready, run:"    
         Write-Host " $TestSuiteDirectory\Invoke-HRTests.ps1"    
+        Write-Host "Or with Maester:"    
+        Write-Host ' Connect-MgGraph -Scopes ((Get-MtGraphScope)+"Synchronization.ReadWrite.All")'    
+        Write-Host " Invoke-Maester $TestSuiteDirectory"    
     }
     catch {
         throw $_

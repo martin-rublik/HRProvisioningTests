@@ -1,21 +1,26 @@
-﻿Describe '%TESTNAME%' {
+﻿Describe '%TESTSUITENAME%' {
     # load the json config files
     $testConfig=@()
     ls "$PSScriptRoot\Data\*.json" | foreach {
         $configObject = Get-Content -Raw $_.FullName | ConvertFrom-Json
         
         $ht=@{}
+		$ht.Add("TestCase",$_.Name.Split(".")[0])
         
         $configObject.psobject.properties | foreach {$ht.Add($_.Name,$_.Value)}
-        $tenantConfig=ls "$PSScriptRoot\..\..\Config\Config.json" | get-content -raw | ConvertFrom-Json
-        $ht.Add("SynchronizationTemplateId",$tenantConfig.SynchronizationTemplateId)
-        $ht.Add("ServicePrincipalId",$tenantConfig.ServicePrincipalId)
+        $HRAppConfig=ls "$PSScriptRoot\..\..\Config\Config.json" | get-content -raw | ConvertFrom-Json
+		
+        $ht.Add("SynchronizationTemplateId",$HRAppConfig.SynchronizationTemplateId)
+		$ht.Add("HRApplicationDisplayName",$HRAppConfig.HRApplicationDisplayName)
+        $ht.Add("ServicePrincipalId",$HRAppConfig.ServicePrincipalId)
+		$ht.Add("TestSuiteName",$HRAppConfig.TestSuiteName)
 
         $testConfig+=$ht
     }
     
     # for each test structure: test Parsing, Evaluation and Expected result
-    It "When: '<Description>', it returns: '<ExpectedResult>'" -ForEach $testConfig {
+
+    It "HR.<TestSuiteName>.<TargetAttributeName>.<TestCase>: '<Description>'" -Tag HR,"%TESTSUITENAME%.%TESTNAME%" -ForEach $testConfig {
 
         $propertiesHT = @()
  		foreach($attr in $InputAttributes.psobject.properties)
@@ -32,8 +37,134 @@
         }
 
         $retval = Invoke-MgParseServicePrincipalSynchronizationTemplateSchemaExpression -ServicePrincipalId $ServicePrincipalId -BodyParameter $params -SynchronizationTemplateId $SynchronizationTemplateId
-        $retval.ParsingSucceeded | Should -Be $true -Because "PARSING must succeed to determine EvaluationResult."
-        $retval.EvaluationSucceeded | Should -Be $true -Because "EVALUATION must succeed to determine EvaluationResult."
-        $retval.EvaluationResult | Should -Be $ExpectedResult 
+
+		# TODO refactor the test for Maester integration 
+		# 	Add GraphObjects and GraphObjectType
+		# 	And improve the testResult generation logic, make it a little more readable
+		if (Get-Module Maester -ListAvailable)
+		{
+			$success = $retval.ParsingSucceeded -and $retval.EvaluationSucceeded -and ($retval.EvaluationResult -eq $ExpectedResult)
+			$testResult=""
+			if ($success)
+			{
+				$testResult=@"
+Parsing and evaulation succeed. Evaluated result matched expected result.
+
+
+Expression:
+~~~
+$Expression
+~~~
+
+InputParams:
+~~~json
+$(($InputAttributes.psobject.properties | %{$_ | select -property @{n='attribute';e={$_.Name}},@{n='value';e={$_.Value}}} | Format-Table -AutoSize | Out-String).Trim())
+~~~
+
+ExpectedResult: 
+~~~
+$ExpectedResult
+~~~
+"@
+			}
+			
+			if (-not $retval.ParsingSucceeded)
+			{
+				$testResult+=@"
+Parsing of the expression failed. 
+Expression:
+~~~
+$Expression
+~~~
+
+Error:
+~~~json
+$($retval.error | ConvertTo-json)
+~~~
+"@
+			}
+			
+			if (-not $retval.EvaluationSucceeded)
+			{
+				$testResult+=@"
+Expression:
+~~~
+$Expression
+~~~
+
+InputParams:
+~~~
+$(($InputAttributes.psobject.properties | %{$_ | select -property @{n='attribute';e={$_.Name}},@{n='value';e={$_.Value}}} | Format-Table -AutoSize | Out-String).Trim())
+~~~
+
+Error:
+~~~json
+$($retval.Error | ConvertTo-json)
+~~~
+"@
+			}
+			if (($retval.ParsingSucceeded -and $retval.EvaluationSucceeded -and ($retval.EvaluationResult -ne $ExpectedResult)))
+			{
+				$testResult+=@"
+Evaluated did not matched expected result. 
+
+Expression:
+~~~
+$Expression
+~~~
+
+InputParams:
+~~~json
+$(($InputAttributes.psobject.properties | %{$_ | select -property @{n='attribute';e={$_.Name}},@{n='value';e={$_.Value}}} | Format-Table -AutoSize | Out-String).Trim())
+~~~
+
+ExpectedResult: 
+~~~
+$ExpectedResult
+~~~
+
+EvaluationResult:
+~~~
+$($retval.EvaluationResult)
+~~~
+"@
+			}
+			if ([string]::IsNullOrEmpty($testResult))
+			{
+				$testResult+=@"
+Evaluated did not matched expected result. 
+
+Expression:
+~~~
+$Expression
+~~~
+
+InputParams:
+~~~json
+$(($InputAttributes.psobject.properties | %{$_ | select -property @{n='attribute';e={$_.Name}},@{n='value';e={$_.Value}}} | Format-Table -AutoSize | Out-String).Trim())
+~~~
+
+ExpectedResult: 
+~~~
+$ExpectedResult
+~~~
+
+EvaluationResult:
+~~~
+$($retval.EvaluationResult)
+~~~
+
+"@
+			}	
+			Add-MtTestResultDetail -Result $testResult -Description "$Description"
+		}
+        
+		$retval.ParsingSucceeded | Should -BeTrue -Because "PARSING must succeed to determine EvaluationResult." -ErrorAction "Continue"
+        $retval.EvaluationSucceeded | Should -BeTrue -Because "EVALUATION must succeed to determine EvaluationResult." -ErrorAction "Continue"
+		if ($retval.ParsingSucceeded -and $retval.EvaluationSucceeded)
+		{
+			$retval.EvaluationResult | Should -Be $ExpectedResult -ErrorAction "Continue"
+		}
+		
     }
 }
