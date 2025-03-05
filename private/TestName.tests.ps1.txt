@@ -1,15 +1,18 @@
 Describe '%TESTSUITENAME%' {
-    # load the json config files
+    # Load the JSON config files
     $testConfig = @()
-    Get-ChildItem -Path "$PSScriptRoot/Data/*.json" | ForEach-Object {
-        $configObject = Get-Content -Raw $_.FullName | ConvertFrom-Json
-        
-        $ht = @{}
-        $ht.Add("TestCase", $_.Name.Split(".")[0])
-        
+    $dataPath = Join-Path -Path $PSScriptRoot -ChildPath "Data/*.json"
+    Get-ChildItem -Path $dataPath | ForEach-Object {
+        $configObject = Get-Content -Raw -Path $_.FullName | ConvertFrom-Json
+
+        $ht = @{
+            TestCase = $_.Name.Split(".")[0]
+        }
+
         $configObject.PSObject.Properties | ForEach-Object { $ht.Add($_.Name, $_.Value) }
-        $HRAppConfig = Get-Content -Raw "$PSScriptRoot/../../Config/Config.json" | ConvertFrom-Json
-        
+        $configPath = Join-Path -Path $PSScriptRoot -ChildPath "../../Config/config.json"
+        $HRAppConfig = Get-Content -Raw -Path $configPath | ConvertFrom-Json
+
         $ht.Add("SynchronizationTemplateId", $HRAppConfig.SynchronizationTemplateId)
         $ht.Add("HRApplicationDisplayName", $HRAppConfig.HRApplicationDisplayName)
         $ht.Add("ServicePrincipalId", $HRAppConfig.ServicePrincipalId)
@@ -17,18 +20,18 @@ Describe '%TESTSUITENAME%' {
 
         $testConfig += $ht
     }
-    
-    # for each test structure: test Parsing, Evaluation and Expected result
+
+    # For each test structure: test Parsing, Evaluation and Expected result
     It "HR.<TestSuiteName>.<TargetAttributeName>.<TestCase>: '<Description>'" -Tag HR,"%TESTSUITENAME%.%TESTNAME%" -ForEach $testConfig {
 
         $propertiesHT = @()
         foreach ($attr in $InputAttributes.PSObject.Properties) {
-            $propertiesHT += @{'key' = $attr.Name; 'value' = $attr.Value}
+            $propertiesHT += @{ key = $attr.Name; value = $attr.Value }
         }
         $params = @{
-            expression = $Expression
+            expression                = $Expression
             targetAttributeDefinition = $null
-            testInputObject = @{
+            testInputObject           = @{
                 definition = $null
                 properties = $propertiesHT
             }
@@ -40,7 +43,7 @@ Describe '%TESTSUITENAME%' {
         if (Get-Module Maester -ListAvailable) {
             $success = $retval.ParsingSucceeded -and $retval.EvaluationSucceeded -and ($retval.EvaluationResult -eq $ExpectedResult)
             $testResult = ""
-            
+
             if ($success) {
                 $testResult = @"
 Parsing and evaluation succeed. Evaluated result matched expected result.
@@ -61,10 +64,9 @@ $ExpectedResult
 ~~~
 "@
             }
-            
+
             if (-not $retval.ParsingSucceeded) {
                 $testResult += @"
-
 Parsing of the expression failed. 
 Expression:
 ~~~
@@ -77,17 +79,16 @@ $($retval.error | ConvertTo-Json)
 ~~~
 "@
             }
-            
+
             if (-not $retval.EvaluationSucceeded) {
                 $testResult += @"
-
 Expression:
 ~~~
 $Expression
 ~~~
 
 InputParams:
-~~~
+~~~json
 $((($InputAttributes.PSObject.Properties | ForEach-Object { $_ | Select-Object -Property @{n='attribute';e={$_.Name}},@{n='value';e={$_.Value}} }) | Format-Table -AutoSize | Out-String).Trim())
 ~~~
 
@@ -97,10 +98,9 @@ $($retval.Error | ConvertTo-Json)
 ~~~
 "@
             }
-            
+
             if (($retval.ParsingSucceeded -and $retval.EvaluationSucceeded -and ($retval.EvaluationResult -ne $ExpectedResult))) {
                 $testResult += @"
-
 Evaluated did not match expected result. 
 
 Expression:
@@ -124,10 +124,9 @@ $($retval.EvaluationResult)
 ~~~
 "@
             }
-            
+
             if ([string]::IsNullOrEmpty($testResult)) {
                 $testResult += @"
-
 Evaluated did not match expected result. 
 
 Expression:
@@ -151,13 +150,13 @@ $($retval.EvaluationResult)
 ~~~
 "@
             }
-            
+
             Add-MtTestResultDetail -Result $testResult -Description "$Description"
         }
-        
+
         $retval.ParsingSucceeded | Should -BeTrue -Because "PARSING must succeed to determine EvaluationResult." -ErrorAction "Continue"
         $retval.EvaluationSucceeded | Should -BeTrue -Because "EVALUATION must succeed to determine EvaluationResult." -ErrorAction "Continue"
-        
+
         if ($retval.ParsingSucceeded -and $retval.EvaluationSucceeded) {
             $retval.EvaluationResult | Should -Be $ExpectedResult -ErrorAction "Continue"
         }
